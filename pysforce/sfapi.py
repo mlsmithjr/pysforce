@@ -2,7 +2,10 @@ import logging
 import json
 import operator
 from typing import List, Dict, Generator
-from pysforce.auth import Authenticator
+
+from fastcache import lru_cache
+
+from pysforce.auth import SFAuthenticator
 from pysforce import SF_API_VERSION as _API_VERSION
 
 
@@ -17,9 +20,8 @@ class SFError(Exception):
 class SFClient:
     client = None
     _auth = None
-    service_url = None
 
-    def __init__(self, auth: Authenticator):
+    def __init__(self, auth: SFAuthenticator):
         self.logger = logging.getLogger('sfclient')
         if not auth.is_authenticated():
             raise Exception('not authenticated')
@@ -44,7 +46,7 @@ class SFClient:
         -------
         A dictionary representing all sobject attributes. (see Salesforce metadata docs for more):
         """
-        sobject_doc = self.get_http('sobjects/{}/describe'.format(sobject_name), {})
+        sobject_doc = self._http_get('sobjects/{}/describe'.format(sobject_name), {})
         return sobject_doc
 
     def get_sobject_list(self) -> List[Dict]:
@@ -54,11 +56,12 @@ class SFClient:
         -------
         A list of dictionaries representing sobject attributes. (see Salesforce metadata docs for more):
         """
-        response = self.get_http('sobjects/', {})
+        response = self._http_get('sobjects/', {})
         sobject_list = response['sobjects']
         return sobject_list
 
-    def get_field_list(self, sobject_name: str) -> List[Dict]:
+    @lru_cache(maxsize=10, typed=False)
+    def get_field_list(self, sobject_name: str) -> [Dict]:
         """Returns the list of field definitions for a given sobject
 
         Parameters
@@ -129,34 +132,44 @@ class SFClient:
           }
 
         """
-        response = self.get_http('sobjects/%s/describe/' % (sobject_name,), {})
+        response = self._http_get('sobjects/%s/describe/' % (sobject_name.lower(),), {})
         fieldlist = response['fields']
         fieldlist.sort(key=operator.itemgetter('name'))
         return fieldlist
 
     def get_field_map(self, sobject_name: str) -> Dict:
-        thelist = self.get_field_list(sobject_name)
+        thelist = self.get_field_list(sobject_name.lower())
         return dict((f['name'].lower(), f) for f in thelist)
 
     ##
     # Data methods
     ##
-    def fetch_record(self, sobject_name: str, recid: str, field_list: List):
+    def fetch_record(self, sobject_name: str, recid: str, field_list: List = None) -> Dict:
+        """
+        Fetch a single record by primary key.
+        :param sobject_name: name of the sobject (table)
+        :param recid: unique recordid for the row to be returned
+        :param field_list: optional, list of fields to return. If omitted, all fields are returned.
+        :return: found record, or None
+        """
+        if field_list is None:
+            fmap = self.get_field_map(sobject_name)
+            field_list = fmap.keys()
         fieldstring = ','.join(field_list)
         url = 'sobjects/{0}/{1}'.format(sobject_name, recid)
-        result = self.get_http(url, {'fields': fieldstring})
+        result = self._http_get(url, {'fields': fieldstring})
         return result
 
     def insert_record(self, sobject_name, user_params) -> str:
         if isinstance(user_params, Dict):
             user_params = json.dumps(user_params)
-        data = self.http_post(sobject_name, json.dumps(user_params))
+        data = self._http_post(sobject_name, json.dumps(user_params))
         return data['id'] if data else None
 
     def update_record(self, sobject_name: str, recid: str, user_params):
         if isinstance(user_params, Dict):
             user_params = json.dumps(user_params)
-        self.http_patch(sobject_name, recid, user_params)
+        self._http_patch(sobject_name, recid, user_params)
 
     def query(self, soql: str) -> Generator:
         fullurl = f'{self._auth.service_url}/services/data/v{_API_VERSION}/query/'
@@ -187,10 +200,29 @@ class SFClient:
             else:
                 break
 
+    def call(self, urn: str) -> str:
+        """call a custom REST endpoint
+
+        :param urn: custom part of the full service URL
+        :return raw text body of response
+        """
+
+        if urn is None or len(urn) == 0:
+            raise ValueError("urn parameter is not valid")
+        if urn[0] == '/':
+            urn = urn[1:]
+        fullurl = f'{self.service_url}/{urn}'
+        response = self.client.get(fullurl)
+        return response.text
+
+    @property
+    def service_url(self):
+        return self._auth.service_url
+
     ##
     # REST API wrappers
     ##
-    def http_post(self, sobject_name: str, payload):
+    def _http_post(self, sobject_name: str, payload):
         if isinstance(payload, Dict):
             payload = json.dumps(payload)
         try:
@@ -206,15 +238,17 @@ class SFClient:
         data = json.loads(response.text)
         return data
 
-    def get_http(self, resource, url_params):
+    def _http_get(self, resource, url_params):
         full_url = f'{self._auth.service_url}/services/data/v{_API_VERSION}/{resource}'
         response = self.client.get(full_url, params=url_params)
+        if response.status_code == 404:
+            return None
         result_payload = response.text
         response.raise_for_status()
         data = json.loads(result_payload)
         return data
 
-    def http_patch(self, sobject_name, recid, url_data):
+    def _http_patch(self, sobject_name, recid, url_data):
         if isinstance(url_data, Dict):
             url_data = json.dumps(url_data)
         response = self.client.patch(
@@ -226,13 +260,11 @@ class SFClient:
     # Helpers
     ##
 
-    def record_count(self, sobject_name, where_filter: str = None):
+    def record_count(self, sobject_name: str, where_filter: str = None):
         """Returns the number of records in a table, possibly filtered
 
-         Parameters
-         ----------
-         where_filter:
-            If given, only count records matching the given SOQL Where clause
+        :param where_filter: optional WHERE clause criteria for filtering the count
+        :param sobject_name: name of the sobject to count
         """
         soql = 'select count() from ' + sobject_name
         if where_filter:

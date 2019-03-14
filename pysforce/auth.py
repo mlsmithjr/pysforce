@@ -1,10 +1,18 @@
 import time
+from abc import ABC, abstractmethod
 import jwt
 import requests
 import json
 
 
-class Authenticator(object):
+class SFAuthCommon(ABC):
+
+    @abstractmethod
+    def authenticate(self):
+        pass
+
+
+class SFAuthenticator(object):
 
     access_token = None
     service_url = None
@@ -12,9 +20,6 @@ class Authenticator(object):
     _authenticated = False
 
     def __init__(self):
-        pass
-
-    def authenticate(self):
         pass
 
     def is_authenticated(self):
@@ -29,17 +34,23 @@ class Authenticator(object):
                                     'Accept-Encoding': 'gzip, compress, deflate', 'Accept-Charset': 'utf-8'})
 
 
-class OAuthJWT(Authenticator):
+class OAuthJWT(SFAuthenticator, SFAuthCommon):
 
     def __init__(self, username: str, consumer_key: str, cert_key: str, server_url='https://test.salesforce.com'):
-        Authenticator.__init__(self)
-        payload = {'iss': consumer_key,
-                   'sub': username,
-                   'aud': server_url,
+        SFAuthenticator.__init__(self)
+        self.username = username
+        self.consumer_key = consumer_key
+        self.cert_key = cert_key
+        self.server_url = server_url
+
+    def authenticate(self):
+        payload = {'iss': self.consumer_key,
+                   'sub': self.username,
+                   'aud': self.server_url,
                    'exp': int(time.time()) + 60
                    }
-        package = jwt.encode(payload, cert_key, algorithm='RS256')
-        rsp = requests.post(server_url + '/services/oauth2/token',
+        package = jwt.encode(payload, self.cert_key, algorithm='RS256')
+        rsp = requests.post(self.server_url + '/services/oauth2/token',
                             data={'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer',
                                   'assertion': package},
                             headers={'content-type': 'application/x-www-form-urlencoded'})
@@ -48,10 +59,10 @@ class OAuthJWT(Authenticator):
             raise Exception(payload['error_description'])
         rsp.raise_for_status()
         self._authenticated = True
-        Authenticator.construct(self, payload)
+        SFAuthenticator.construct(self, payload)
 
 
-class OAuthPassword(Authenticator):
+class OAuthPassword(SFAuthenticator):
     _username = None
     _password = None
     _consumer_key = None
@@ -60,7 +71,7 @@ class OAuthPassword(Authenticator):
 
     def __init__(self, username: str, password: str, consumer_key: str, consumer_secret: str,
                  server_url='https://test.salesforce.com'):
-        Authenticator.__init__(self)
+        SFAuthenticator.__init__(self)
         self._username = username
         self._password = password
         self._consumer_key = consumer_key
@@ -81,4 +92,4 @@ class OAuthPassword(Authenticator):
             raise Exception(payload['error_description'])
         rsp.raise_for_status()
         super._authenticated = True
-        Authenticator.construct(self, payload)
+        SFAuthenticator.construct(self, payload)

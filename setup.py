@@ -24,6 +24,7 @@ setuptools.setup(
     long_description_content_type = 'text/markdown',
     url='https://github.com/mlsmithjr/pysforce',
     packages=['pysforce'],
+    install_requires=['requests', 'pyjwt', 'cryptography', 'fastcache'],
     classifiers=[
       'Programming Language :: Python :: 3',
       'Environment :: Console',

@@ -9,6 +9,7 @@ verify_ssl = true
 requests = "*"
 pyjwt = "*"
 cryptography = "*"
+fastcache = "*"
 
 [requires]
 python_version = "3.7"
