@@ -1,7 +1,7 @@
 import logging
 import json
 import operator
-from typing import List, Dict, Generator
+from typing import List, Dict, Generator, Optional
 
 from fastcache import lru_cache
 
@@ -34,7 +34,7 @@ class SFClient:
     ##
     # Metadata methods
     ##
-    def get_sobject_definition(self, sobject_name) -> Dict:
+    def sobject_schema(self, sobject_name) -> Dict:
         """Returns detailed attributes about an sobject
 
         Parameters
@@ -49,7 +49,7 @@ class SFClient:
         sobject_doc = self._http_get('sobjects/{}/describe'.format(sobject_name), {})
         return sobject_doc
 
-    def get_sobject_list(self) -> List[Dict]:
+    def sobjects(self) -> List[Dict]:
         """Returns a list of available sobjects and minimal attributes for each
 
         Returns
@@ -61,7 +61,7 @@ class SFClient:
         return sobject_list
 
     @lru_cache(maxsize=10, typed=False)
-    def get_field_list(self, sobject_name: str) -> [Dict]:
+    def sobject_field_list(self, sobject_name: str) -> [Dict]:
         """Returns the list of field definitions for a given sobject
 
         Parameters
@@ -137,8 +137,8 @@ class SFClient:
         fieldlist.sort(key=operator.itemgetter('name'))
         return fieldlist
 
-    def get_field_map(self, sobject_name: str) -> Dict:
-        thelist = self.get_field_list(sobject_name.lower())
+    def sobject_field_map(self, sobject_name: str) -> Dict:
+        thelist = self.sobject_field_list(sobject_name.lower())
         return dict((f['name'].lower(), f) for f in thelist)
 
     ##
@@ -153,7 +153,7 @@ class SFClient:
         :return: found record, or None
         """
         if field_list is None:
-            fmap = self.get_field_map(sobject_name)
+            fmap = self.sobject_field_map(sobject_name)
             field_list = fmap.keys()
         fieldstring = ','.join(field_list)
         url = 'sobjects/{0}/{1}'.format(sobject_name, recid)
@@ -161,14 +161,10 @@ class SFClient:
         return result
 
     def insert_record(self, sobject_name, user_params) -> str:
-        if isinstance(user_params, Dict):
-            user_params = json.dumps(user_params)
-        data = self._http_post(sobject_name, json.dumps(user_params))
+        data = self._http_post(sobject_name, user_params)
         return data['id'] if data else None
 
     def update_record(self, sobject_name: str, recid: str, user_params):
-        if isinstance(user_params, Dict):
-            user_params = json.dumps(user_params)
         self._http_patch(sobject_name, recid, user_params)
 
     def query(self, soql: str) -> Generator:
@@ -199,6 +195,17 @@ class SFClient:
                     yield (rec)
             else:
                 break
+
+    def query_one(self, soql: str) -> Optional[Dict]:
+        """
+        Execute a query and return a single record
+
+        :param soql: SOQL statement
+        :return: first record found, or None
+        """
+        for rec in self.query(soql):
+            return rec
+        return None
 
     def call(self, urn: str) -> str:
         """call a custom REST endpoint
