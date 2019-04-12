@@ -20,8 +20,19 @@ definitive API toolkit.
 
 ### Installation
 
+```bash
+pip3 install --user pysforce
 ```
-pip3 install pysforce
+-or-
+```bash
+pipenv install pysforce
+```
+
+
+### Upgrading
+
+```bash
+pip3 install --upgrade pysforce
 ```
 
 ## Quick Start
@@ -33,21 +44,15 @@ from pysforce import OAuthPassword, SFClient
 # authenticate to a sandbox (default)
 myauth = OAuthPassword('myuser@mydomain.com.dev', 'mypassword')
 client = SFClient(myauth)
-
-
-
 ```
 ##### JWT authentication
 ```python
-from pysforce import OAuthPassword, SFClient
+from pysforce import OAuthJWT, SFClient
 
-pubkey = None
-with open('mykey.pem', 'r') as keyfile:
-  pubkey = keyfile.read()
-# authenticate to a sandbox (default)
-myauth = OAuthJWT('myuser@mydomain.com.dev', consumer_key, pubkey)
+pubkey = Path('mykey.pem').read_text()
+# authenticate to production
+myauth = OAuthJWT('myuser@mydomain.com.dev', consumer_key, pubkey, 'https://domain.my.salesforce.com')
 client = SFClient(myauth)
-
 ```
 
 ##### execute a query
@@ -59,6 +64,11 @@ for record in client.query('select id,name from account, owner.name'):
     print(f'{id}:{name}:{ownername}')
 ```
 
+##### execute a query for a single row
+```python
+record = client.query_one('select id,name from account, owner.name limit 1'):
+```
+
 ##### fetch and update a record by ID
 ```python
 try:
@@ -67,10 +77,17 @@ try:
     client.update_record('account', recordid, {'onboarding_status': 'Complete'})
 except Exception as ex:
   print('record missing')
-
 ```
-
-##### list tables available to my profile
+##### insert a record
+```python
+try:
+  contact = {'FirstName': 'Marshall', 'LastName': 'Smith', 'email': 'marshallsmithjr@gmail.com' }
+client.insert_record('contact', contact)
+except Exception as ex:
+  print(str(ex)))
+```
+  
+##### list tables available to my permissions
 ```python
 for sobject in client.get_sobject_list():
   print(sobject['name'])
@@ -106,4 +123,8 @@ for key, val in fieldmap.items():
 ```python
 reccount = client.record_count('account')
 print(f'{reccount} records in account table')
+```
+##### call a custom REST endpoint
+```python
+text = client.call('myservices/find_account&extid=1000001')
 ```

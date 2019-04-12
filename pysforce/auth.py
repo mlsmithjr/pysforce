@@ -14,13 +14,11 @@ class SFAuthCommon(ABC):
 
 class SFAuthenticator(object):
 
-    access_token = None
-    service_url = None
-    client = None
-    _authenticated = False
-
     def __init__(self):
-        pass
+        self.access_token = None
+        self.service_url = None
+        self.client = None
+        self._authenticated = False
 
     def is_authenticated(self):
         return self._authenticated
