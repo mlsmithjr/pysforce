@@ -1,4 +1,5 @@
 # pysforce
+	Pronounced pie-es-force
 
 Library to authenticate with and make API calls to Salesforce.
 This is a new library that's starting out very simple with the hope that
@@ -69,6 +70,11 @@ for record in client.query('select id,name from account, owner.name'):
 record = client.query_one('select id,name from account, owner.name limit 1'):
 ```
 
+##### retrieve multiple rows by recordId
+```python
+records = client.fetch_records('account', ['001000003dfJ87f','0010000000fE46q'], ['Id','Name','BillingCity'])
+```
+
 ##### fetch and update a record by ID
 ```python
 try:
@@ -78,6 +84,16 @@ try:
 except Exception as ex:
   print('record missing')
 ```
+
+##### update multiple records (up to 200 at a time)
+```python
+  contacts= [
+    {'Id': '005000000123456', 'email': mreynolds@serenity.net'},
+    {'Id': '005000000789123',  'email': jcobb@serenity.net'},
+  ]
+  result = client.update_records('contact', contacts)
+```
+
 ##### insert a record
 ```python
 try:
@@ -85,6 +101,15 @@ try:
 client.insert_record('contact', contact)
 except Exception as ex:
   print(str(ex)))
+```
+
+##### insert multiple records (up to 200 at a time)
+```python
+  contacts= [
+    {'FirstName': 'Mal', 'LastName': 'Reynolds', 'email': mal@serenity.net'},
+    {'FirstName': 'Jayne', 'LastName': 'Cobb', 'email': jayne@serenity.net'},
+  ]
+  result = client.insert_records('contact', contacts)
 ```
   
 ##### list tables available to my permissions

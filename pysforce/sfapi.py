@@ -160,12 +160,107 @@ class SFClient:
         result = self._http_get(url, {'fields': fieldstring})
         return result
 
-    def insert_record(self, sobject_name, user_params) -> str:
-        data = self._http_post(sobject_name, user_params)
+    def insert_record(self, sobject_name: str, user_params: Dict) -> str:
+        """
+        Insert a single sobject record
+
+        :param sobject_name: Name of the sobject (table)
+        :param user_params: Dictionary of fields for the new record
+        :return: recordId of the new record, or None if failed
+        """
+        fullurl = f'{self._auth.service_url}/services/data/v{_API_VERSION}/sobjects/{sobject_name}/'
+        data = self._http_post(fullurl, user_params)
         return data['id'] if data else None
 
-    def update_record(self, sobject_name: str, recid: str, user_params):
+    def insert_records(self, sobject_type, sobjects: List[Dict], all_or_none=False) -> List[Dict]:
+        """
+        Insert multiple records in a single API call, up to 200 at a time. It supports records for the same
+        sobject type, or mixed types (see https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/resources_composite_sobjects_collections_create.htm)
+
+        :param sobject_type: Name or list of names of the sobjects (table) to insert into. If this parameter
+        is a list of strings, each string corresponds to an entry in sobjects [ie. zip(sobject_type, sobjects)].
+        If just a single string, it applies to all records.
+        :param sobjects: List of Dicts containing the new record fields.
+        :param all_or_none: If true, a single insert failure will roll back all records.
+        :return: List of Dicts containing the result of each inserted record, ie:
+        [
+            {
+              "id" : "001RM000003oLnnYAE",
+              "success" : true,
+              "errors" : [ ]
+            },
+            {
+              "id" : "003RM0000068xV6YAI",
+              "success" : true,
+              "errors" : [ ]
+            }
+        ]
+        """
+        if len(sobjects) > 200:
+            raise ValueError(f"API {_API_VERSION} supports a maximum of 200 records at a time")
+        if isinstance(sobject_type, str):
+            sobject_type = [sobject_type] * len(sobjects)
+        if len(sobject_type) != len(sobjects):
+            raise ValueError("Number of sobject types must match number of sobject records")
+
+        fullurl = f'{self._auth.service_url}/services/data/v{_API_VERSION}/composite/sobjects'
+        records = []
+        payload = {"allOrNone": all_or_none, "records": records}
+        for stype, rec in zip(sobject_type, sobjects):
+            records.append({"attributes": {"type": stype}, **rec})
+        result = self._http_post(fullurl, payload)
+        return result
+
+    def update_record(self, sobject_name: str, recid: str, user_params: Dict):
         self._http_patch(sobject_name, recid, user_params)
+
+    def update_records(self, sobject_type, sobjects: List[Dict], all_or_none=False) -> List[Dict]:
+        """
+        Update multiple records in a single API call, up to 200 at a time. It supports records for the same
+        sobject type, or mixed types (see https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/resources_composite_sobjects_collections_update.htm)
+
+        :param sobject_type: Name or list of names of the sobjects (table) being updated. If this parameter
+        is a list of strings, each string corresponds to an entry in sobjects [ie. zip(sobject_type, sobjects)].
+        If just a single string, it applies to all records.
+        :param sobjects: List of Dicts containing the changed record fields.
+        :param all_or_none: If true, a single update failure will roll back all records.
+        :return: List of Dicts containing the result of each updated record, ie:
+        [
+            {
+              "id" : "001RM000003oLnnYAE",
+              "success" : true,
+              "errors" : [ ]
+            },
+            {
+              "id" : "003RM0000068xV6YAI",
+              "success" : true,
+              "errors" : [ ]
+            }
+        ]
+        """
+        if len(sobjects) > 200:
+            raise ValueError(f"API {_API_VERSION} supports a maximum of 200 records at a time")
+        if isinstance(sobject_type, str):
+            sobject_type = [sobject_type] * len(sobjects)
+        if len(sobject_type) != len(sobjects):
+            raise ValueError("Number of sobject types must match number of sobject records")
+
+        fullurl = f'{self._auth.service_url}/services/data/v{_API_VERSION}/composite/sobjects'
+        records = []
+        payload = {"allOrNone": all_or_none, "records": records}
+        for stype, rec in zip(sobject_type, sobjects):
+            records.append({"attributes": {"type": stype}, **rec})
+        result = self._http_patch(fullurl, payload)
+        return result
+
+    def fetch_records(self, sobject_type: str, recordidlist: List[str], fieldnames: List[str]) -> List[Dict]:
+        fullurl = f'{self._auth.service_url}/services/data/v{_API_VERSION}/composite/sobjects/{sobject_type}'
+        payload = {"ids": recordidlist, "fields": fieldnames}
+        result = self._http_post(fullurl, payload)
+        js = json.loads(result.text)
+        for item in js:
+            del item["attributes"]
+        return js
 
     def query(self, soql: str) -> Generator:
         fullurl = f'{self._auth.service_url}/services/data/v{_API_VERSION}/query/'
@@ -210,7 +305,7 @@ class SFClient:
     def call(self, urn: str) -> str:
         """call a custom REST endpoint
 
-        :param urn: custom part of the full service URL
+        :param urn: custom part of the full service URL, with or without leading /
         :return raw text body of response
         """
 
@@ -229,13 +324,27 @@ class SFClient:
     ##
     # REST API wrappers
     ##
-    def _http_post(self, sobject_name: str, payload):
+    def _http_post(self, fullurl: str, payload):
         if isinstance(payload, Dict):
             payload = json.dumps(payload)
         try:
-            fullurl = f'{self._auth.service_url}/services/data/v{_API_VERSION}/sobjects/{sobject_name}/'
-            self.logger.debug('post %s', fullurl)
+            # self.logger.debug('post %s', fullurl)
             response = self.client.post(fullurl, data=payload)
+            response.raise_for_status()
+        except Exception as ex:
+            self.logger.error(ex)
+            raise ex
+        if 'errorCode' in response.text:
+            self.logger.error('response: %s', response.text)
+        data = json.loads(response.text)
+        return data
+
+    def _http_patch(self, fullurl: str, payload):
+        if isinstance(payload, Dict):
+            payload = json.dumps(payload)
+        try:
+            # self.logger.debug('post %s', fullurl)
+            response = self.client.patch(fullurl, data=payload)
             response.raise_for_status()
         except Exception as ex:
             self.logger.error(ex)
@@ -254,14 +363,6 @@ class SFClient:
         response.raise_for_status()
         data = json.loads(result_payload)
         return data
-
-    def _http_patch(self, sobject_name, recid, url_data):
-        if isinstance(url_data, Dict):
-            url_data = json.dumps(url_data)
-        response = self.client.patch(
-            '%s/services/data/v%s/sobjects/%s/%s/' % (self._auth.service_url, _API_VERSION, sobject_name, recid),
-            data=url_data)
-        response.raise_for_status()
 
     ##
     # Helpers
