@@ -14,6 +14,7 @@ definitive API toolkit.
 * Support large query results using a generator. 
 * Plug-in authentication model.
 * Currently supports user/pass and JWT authentication.
+* Auto connection retry.
 
 ### Requirements
 

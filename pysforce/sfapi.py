@@ -17,16 +17,31 @@ class SFError(Exception):
         return repr(self.value)
 
 
+def managed(fn):
+    def _inner(self, *args, **kwargs):
+        try:
+            return fn(self, *args, **kwargs)
+        except Exception as ex:
+            # reauthenticate and try again
+            print("Exception caught, attempting new authentication: " + str(ex))
+            self._auth.authenticate()
+            if not self._auth.is_authenticated():
+                raise ex
+            return fn(self, *args, **kwargs)
+    return _inner
+
+
 class SFClient:
-    client = None
-    _auth = None
 
     def __init__(self, auth: SFAuthenticator):
         self.logger = logging.getLogger('sfclient')
         if not auth.is_authenticated():
             raise Exception('not authenticated')
         self._auth = auth
-        self.client = self._auth.client
+
+    @property
+    def client(self):
+        return self._auth.client
 
     def close(self):
         self._auth = None
@@ -262,6 +277,7 @@ class SFClient:
             del item["attributes"]
         return js
 
+    @managed
     def query(self, soql: str) -> Generator:
         fullurl = f'{self._auth.service_url}/services/data/v{_API_VERSION}/query/'
         response = self.client.get(fullurl, params={'q': soql})
@@ -302,6 +318,7 @@ class SFClient:
             return rec
         return None
 
+    @managed
     def call(self, urn: str) -> str:
         """call a custom REST endpoint
 
@@ -324,6 +341,7 @@ class SFClient:
     ##
     # REST API wrappers
     ##
+    @managed
     def _http_post(self, fullurl: str, payload):
         if isinstance(payload, Dict):
             payload = json.dumps(payload)
@@ -339,6 +357,7 @@ class SFClient:
         data = json.loads(response.text)
         return data
 
+    @managed
     def _http_patch(self, fullurl: str, payload):
         if isinstance(payload, Dict):
             payload = json.dumps(payload)
@@ -354,6 +373,7 @@ class SFClient:
         data = json.loads(response.text)
         return data
 
+    @managed
     def _http_get(self, resource, url_params):
         full_url = f'{self._auth.service_url}/services/data/v{_API_VERSION}/{resource}'
         response = self.client.get(full_url, params=url_params)
@@ -368,6 +388,7 @@ class SFClient:
     # Helpers
     ##
 
+    @managed
     def record_count(self, sobject_name: str, where_filter: str = None):
         """Returns the number of records in a table, possibly filtered
 

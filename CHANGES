@@ -2,6 +2,9 @@
 ### Version History
 
 
+1.1.1
+    * Added decorator around key methods to try and reauthenticate if exception received
+
 1.1.0
     * Added support for transactional multiple record inserts and updates in a single API call
 

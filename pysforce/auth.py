@@ -9,7 +9,7 @@ class SFAuthCommon(ABC):
 
     @abstractmethod
     def authenticate(self):
-        pass
+        raise NotImplemented
 
 
 class SFAuthenticator(object):
@@ -32,6 +32,14 @@ class SFAuthenticator(object):
                                     'Accept-Encoding': 'gzip, compress, deflate', 'Accept-Charset': 'utf-8'})
 
 
+class AuthException(Exception):
+    def __init__(self, msg):
+        self.msg = msg
+
+    def __str__(self):
+        return str(self.msg)
+
+
 class OAuthJWT(SFAuthenticator, SFAuthCommon):
 
     def __init__(self, username: str, consumer_key: str, cert_key: str, server_url='https://test.salesforce.com'):
@@ -42,22 +50,26 @@ class OAuthJWT(SFAuthenticator, SFAuthCommon):
         self.server_url = server_url
 
     def authenticate(self):
-        payload = {'iss': self.consumer_key,
-                   'sub': self.username,
-                   'aud': self.server_url,
-                   'exp': int(time.time()) + 60
-                   }
-        package = jwt.encode(payload, self.cert_key, algorithm='RS256')
-        rsp = requests.post(self.server_url + '/services/oauth2/token',
-                            data={'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-                                  'assertion': package},
-                            headers={'content-type': 'application/x-www-form-urlencoded'})
-        payload = json.loads(rsp.text)
-        if 'error' in payload:
-            raise Exception(payload['error_description'])
-        rsp.raise_for_status()
-        self._authenticated = True
-        SFAuthenticator.construct(self, payload)
+        self._authenticated = False
+        try:
+            payload = {'iss': self.consumer_key,
+                       'sub': self.username,
+                       'aud': self.server_url,
+                       'exp': int(time.time()) + 60
+                       }
+            package = jwt.encode(payload, self.cert_key, algorithm='RS256')
+            rsp = requests.post(self.server_url + '/services/oauth2/token',
+                                data={'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+                                      'assertion': package},
+                                headers={'content-type': 'application/x-www-form-urlencoded'})
+            payload = json.loads(rsp.text)
+            if 'error' in payload:
+                raise Exception(payload['error_description'])
+            rsp.raise_for_status()
+            self._authenticated = True
+            SFAuthenticator.construct(self, payload)
+        except Exception as ex:
+            raise AuthException(str(ex))
 
 
 class OAuthPassword(SFAuthenticator):
@@ -77,17 +89,20 @@ class OAuthPassword(SFAuthenticator):
         self._server_url = server_url
 
     def authenticate(self):
-        payload = {'grant_type': 'password',
-                   'username': self._username,
-                   'password': self._password,
-                   'client_id': self._consumer_key,
-                   'client_secret': self._consumer_secret
-                   }
-        rsp = requests.post(self._server_url + '/services/oauth2/token', data=payload,
-                            headers={'content-type': 'application/x-www-form-urlencoded'})
-        payload = json.loads(rsp.text)
-        if 'error' in payload:
-            raise Exception(payload['error_description'])
-        rsp.raise_for_status()
-        super._authenticated = True
-        SFAuthenticator.construct(self, payload)
+        try:
+            payload = {'grant_type': 'password',
+                       'username': self._username,
+                       'password': self._password,
+                       'client_id': self._consumer_key,
+                       'client_secret': self._consumer_secret
+                       }
+            rsp = requests.post(self._server_url + '/services/oauth2/token', data=payload,
+                                headers={'content-type': 'application/x-www-form-urlencoded'})
+            payload = json.loads(rsp.text)
+            if 'error' in payload:
+                raise Exception(payload['error_description'])
+            rsp.raise_for_status()
+            super._authenticated = True
+            SFAuthenticator.construct(self, payload)
+        except Exception as ex:
+            raise AuthException(str(ex))
