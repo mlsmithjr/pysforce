@@ -25,7 +25,7 @@ def managed(fn):
             # reauthenticate and try again
             print("Exception caught, attempting new authentication: " + str(ex))
             self._auth.authenticate()
-            if not self._auth.is_authenticated():
+            if not self._auth.authenticated:
                 raise ex
             return fn(self, *args, **kwargs)
     return _inner
@@ -35,7 +35,7 @@ class SFClient:
 
     def __init__(self, auth: SFAuthenticator):
         self.logger = logging.getLogger('sfclient')
-        if not auth.is_authenticated():
+        if not auth.authenticated:
             raise Exception('not authenticated')
         self._auth = auth
 

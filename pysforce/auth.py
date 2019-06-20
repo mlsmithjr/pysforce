@@ -20,8 +20,13 @@ class SFAuthenticator(object):
         self.client = None
         self._authenticated = False
 
-    def is_authenticated(self):
+    @property
+    def authenticated(self) -> bool:
         return self._authenticated
+
+    @authenticated.setter
+    def authenticated(self, value: bool):
+        self._authenticated = value
 
     def construct(self, payload):
         self.access_token = payload['access_token']
@@ -102,7 +107,7 @@ class OAuthPassword(SFAuthenticator):
             if 'error' in payload:
                 raise Exception(payload['error_description'])
             rsp.raise_for_status()
-            super._authenticated = True
+            self.authenticated = True
             SFAuthenticator.construct(self, payload)
         except Exception as ex:
             raise AuthException(str(ex))
