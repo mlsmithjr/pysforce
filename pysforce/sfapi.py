@@ -277,7 +277,7 @@ class SFClient:
             del item["attributes"]
         return js
 
-    @managed
+    #@managed
     def query(self, soql: str) -> Generator:
         fullurl = f'{self._auth.service_url}/services/data/v{_API_VERSION}/query/'
         response = self.client.get(fullurl, params={'q': soql})
@@ -318,7 +318,7 @@ class SFClient:
             return rec
         return None
 
-    @managed
+    #@managed
     def call(self, urn: str) -> str:
         """call a custom REST endpoint
 
@@ -334,6 +334,15 @@ class SFClient:
         response = self.client.get(fullurl)
         return response.text
 
+    def delete(self, urn):
+        if urn is None or len(urn) == 0:
+            raise ValueError("urn parameter is not valid")
+        if urn[0] == '/':
+            urn = urn[1:]
+        fullurl = f'{self.service_url}/{urn}'
+        response = self.client.delete(fullurl)
+        return response.text
+
     @property
     def service_url(self):
         return self._auth.service_url
@@ -341,14 +350,14 @@ class SFClient:
     ##
     # REST API wrappers
     ##
-    @managed
+    #@managed
     def _http_post(self, fullurl: str, payload):
         if isinstance(payload, Dict):
             payload = json.dumps(payload)
         try:
             # self.logger.debug('post %s', fullurl)
             response = self.client.post(fullurl, data=payload)
-            response.raise_for_status()
+            #response.raise_for_status()
         except Exception as ex:
             self.logger.error(ex)
             raise ex
@@ -357,14 +366,14 @@ class SFClient:
         data = json.loads(response.text)
         return data
 
-    @managed
+    #@managed
     def _http_patch(self, fullurl: str, payload):
         if isinstance(payload, Dict):
             payload = json.dumps(payload)
         try:
             # self.logger.debug('post %s', fullurl)
             response = self.client.patch(fullurl, data=payload)
-            response.raise_for_status()
+            #response.raise_for_status()
         except Exception as ex:
             self.logger.error(ex)
             raise ex
@@ -373,7 +382,7 @@ class SFClient:
         data = json.loads(response.text)
         return data
 
-    @managed
+    #@managed
     def _http_get(self, resource, url_params):
         full_url = f'{self._auth.service_url}/services/data/v{_API_VERSION}/{resource}'
         response = self.client.get(full_url, params=url_params)
@@ -388,7 +397,7 @@ class SFClient:
     # Helpers
     ##
 
-    @managed
+    #@managed
     def record_count(self, sobject_name: str, where_filter: str = None):
         """Returns the number of records in a table, possibly filtered
 
@@ -402,4 +411,5 @@ class SFClient:
         response = self.client.get(fullurl, params={'q': soql})
         response.raise_for_status()
         result = response.json()
-        return result['totalSize']
+        #return result['totalSize']
+
